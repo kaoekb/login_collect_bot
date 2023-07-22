@@ -20,6 +20,9 @@ rad.json
 *.flf
 #Test results file
 TestResults.xml
-
-bot_sqlite3.py
+#Файл с ключами 
 config.py
+#Тестовая сборка
+bot_sqlite3.py
+#Тестовая сборка
+bot_login.py
