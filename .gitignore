@@ -20,4 +20,6 @@ rad.json
 *.flf
 #Test results file
 TestResults.xml
+
 bot_sqlite3.py
+config.py
