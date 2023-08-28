@@ -5,39 +5,45 @@ from telebot import types
 
 bot = telebot.TeleBot(Token_tg)
 
+# Класс для работы с базой данных MongoDB
 class DataBase:
-	def __init__(self):
-		cluster = MongoClient(Token_MDB)
+    def __init__(self):
+        cluster = MongoClient(Token_MDB)
 
-		self.db = cluster["Users_school_21"]
-		self.login = self.db["login"]
+        self.db = cluster["Users_school_21"]
+        self.login = self.db["login"]
 
-	def get_user(self, chat_id):
-		user = self.login.find_one({"chat_id": chat_id})
+    def get_user(self, chat_id):
+        # Получение пользователя из базы данных по его chat_id
+        user = self.login.find_one({"chat_id": chat_id})
 
-		if user is not None:
-			return user
+        if user is not None:
+            return user
 
-		user = {
-			"chat_id": chat_id,
-			"login_school": [],
-			"login_tg": [],
+        # Если пользователь не найден, создаем нового пользователя в базе данных
+        user = {
+            "chat_id": chat_id,
+            "login_school": [],
+            "login_tg": [],
             "user_id": [],
-		}
+        }
 
-		self.login.insert_one(user)
+        self.login.insert_one(user)
 
-		return user
+        return user
 
-	def set_user(self, chat_id, update):
-		self.login.update_one({"chat_id": chat_id}, {"$set": update})
+    def set_user(self, chat_id, update):
+        # Обновление информации о пользователе в базе данных
+        self.login.update_one({"chat_id": chat_id}, {"$set": update})
 
-	def delete_user(self, user_id):
-		self.login.delete_one({"user_id": user_id})
+    def delete_user(self, user_id):
+        # Удаление пользователя из базы данных по его user_id
+        self.login.delete_one({"user_id": user_id})
 
 db = DataBase()
 
-def find_login(login): # Проверка, есть ли такой логин в БД
+def find_login(login):
+    # Проверка, есть ли такой логин в базе данных
     query = {"$or": [{"login_school": login}, {"login_tg": login}]}
     result = db.login.find_one(query)
     if result is None:
@@ -45,12 +51,12 @@ def find_login(login): # Проверка, есть ли такой логин �
     else:
         return result["login_school"], result["login_tg"]
 
-
+# Обработчик команды /start
 @bot.message_handler(commands=['start'])
 def handle_start(message):
-    # Получаем id пользователя
+    # Получение id пользователя
     user_id = message.from_user.id
-    # Проверяем, есть ли пользователь в базе данных
+    # Проверка, есть ли пользователь в базе данных
     if db.login.find_one({"user_id": user_id}) is not None:
         # Если пользователь уже есть в базе данных, переходим в функцию callback
             bot.register_next_step_handler(message, callback)
@@ -61,13 +67,14 @@ def handle_start(message):
         bot.send_message(message.chat.id, f'Привет, {message.from_user.first_name}, введи свой школьный ник')
         bot.register_next_step_handler(message, hi)
 
+# Функция для обработки ввода школьного ника
 def hi(message):
-    # Получаем логин пользователя в нижнем регистре
+    # Получение логина пользователя в нижнем регистре
     login_school = message.text.lower()
-    # Получаем логин пользователя в Telegram в нижнем регистре
+    # Получение логина пользователя в Telegram в нижнем регистре
     login_tg = message.from_user.username.lower() if message.from_user.username is not None else None
     user_id = message.from_user.id
-    # Проверяем, есть ли логин в Telegram
+    # Проверка, есть ли логин в Telegram
     if login_tg is None:
         # Если логина нет, отправляем сообщение с просьбой создать логин
         bot.send_message(message.chat.id, 'Для использования бота необходимо создать логин (имя пользователя) в настройках Telegram, это не сложно.')
@@ -77,7 +84,7 @@ def hi(message):
         bot.send_message(message.chat.id, 'Введи школьный или телеграм ник интересующего тебя пира.')
     bot.register_next_step_handler(message, callback)
 
-
+# Обработчик команды /help
 @bot.message_handler(commands=['help'])
 def handle_help(message):
     # Отправляем сообщение с помощью по использованию бота
@@ -87,11 +94,12 @@ def handle_help(message):
                 "Если у тебя возникли вопросы или проблемы - обратись к администратору @kaoekb."
     bot.send_message(message.chat.id, help_text)
 
+# Обработчик команды /delete
 @bot.message_handler(commands=['delete'])
 def handle_delete(message):
-    # Получаем id пользователя
+    # Получение id пользователя
     user_id = message.from_user.id
-    # Проверяем, есть ли пользователь в базе данных
+    # Проверка, есть ли пользователь в базе данных
     if db.login.find_one({"user_id": user_id}) is not None:
         # Если пользователь есть в базе данных, отправляем сообщение с подтверждением удаления
         confirm_message = "Ты точно хочешь удалить свой логин?"
@@ -103,11 +111,11 @@ def handle_delete(message):
     else:
         bot.send_message(message.chat.id, 'Ты ещё не зарегистрирован.')
 
-
+# Обработчик нажатия кнопки подтверждения удаления
 @bot.callback_query_handler(func=lambda call: True)
 def handle_confirmation(call):
     if call.data == 'confirm_yes':
-        # Получаем id пользователя
+        # Получение id пользователя
         user_id = call.from_user.id
         # Удаляем запись пользователя из базы данных
         db.delete_user(user_id)
@@ -115,11 +123,11 @@ def handle_confirmation(call):
     elif call.data == 'confirm_no':
         bot.send_message(call.message.chat.id, 'Отменено.')
 
-
+# Обработчик ввода текста (школьного или телеграм ника)
 @bot.message_handler(content_types=['text'])
 def callback(message):
     login = message.text.lower()
-        # Удаляет символ "@", если он является первым символом текста сообщения        
+    # Удаляет символ "@", если он является первым символом текста сообщения        
     if login.startswith('@'):
         login = login[1:]
     
@@ -127,11 +135,10 @@ def callback(message):
     if result is None:
         bot.send_message(message.chat.id, "Логин не найден")
         bot.send_message(message.chat.id, 'Введи школьный или телеграм ник интересующего тебя пира.')
-
     else:
-        text = f"Login school: {result[0].capitalize()}, login tg: @{result[1].capitalize()}"
-        bot.send_message(message.chat.id, text)
+        text = f"Login school: <a href='https://edu.21-school.ru/profile/{result[0].lower()}@student.21-school.ru'>{result[0].capitalize()}</a>, login tg: @{result[1].capitalize()}"
+        bot.send_message(message.chat.id, text, parse_mode='HTML')
         bot.send_message(message.chat.id, 'Введи школьный или телеграм ник интересующего тебя пира.')
 
-
+# Запуск бота
 bot.polling()
