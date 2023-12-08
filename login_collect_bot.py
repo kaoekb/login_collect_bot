@@ -2,35 +2,48 @@ import telebot
 from config import Token_MDB, Token_tg 
 from pymongo import MongoClient
 from telebot import types
+from pymongo.errors import ConnectionFailure
+from datetime import datetime
+import re
+import os
+from dotenv import load_dotenv, find_dotenv
+load_dotenv(find_dotenv())
 
-bot = telebot.TeleBot(Token_tg)
+bot = telebot.TeleBot(os.getenv("Token_tg"))
+
+# Получение текущей даты и времени
+now = datetime.now()    
+current_date = now.strftime("%Y-%m-%d %H:%M")
 
 # Класс для работы с базой данных MongoDB
 class DataBase:
     def __init__(self):
-        cluster = MongoClient(Token_MDB)
+        cluster = MongoClient(os.getenv("Token_MDB"))
 
         self.db = cluster["Users_school_21"]
         self.login = self.db["login"]
 
     def get_user(self, chat_id):
-        # Получение пользователя из базы данных по его chat_id
-        user = self.login.find_one({"chat_id": chat_id})
+        try:
+            # Получение пользователя из базы данных по его chat_id
+            user = self.login.find_one({"chat_id": chat_id})
 
-        if user is not None:
+            if user is not None:
+                return user
+
+            # Если пользователь не найден, создаем нового пользователя в базе данных
+            user = {
+                "chat_id": chat_id,
+                "login_school": [],
+                "login_tg": [],
+                "user_id": [],
+            }
+            self.login.insert_one(user)
             return user
 
-        # Если пользователь не найден, создаем нового пользователя в базе данных
-        user = {
-            "chat_id": chat_id,
-            "login_school": [],
-            "login_tg": [],
-            "user_id": [],
-        }
-
-        self.login.insert_one(user)
-
-        return user
+        except ConnectionFailure as e:
+            print(f"Ошибка соединения с базой данных: {e}")
+            return None
 
     def set_user(self, chat_id, update):
         # Обновление информации о пользователе в базе данных
@@ -40,16 +53,31 @@ class DataBase:
         # Удаление пользователя из базы данных по его user_id
         self.login.delete_one({"user_id": user_id})
 
+
 db = DataBase()
 
 def find_login(login):
-    # Проверка, есть ли такой логин в базе данных
-    query = {"$or": [{"login_school": login}, {"login_tg": login}]}
+    # Параметризованный запрос к базе данных
+    query = {"$or": [
+        {"login_school": {"$eq": login}},
+        {"login_tg": {"$eq": login}}
+    ]}
     result = db.login.find_one(query)
     if result is None:
+    
         return None
     else:
-        return result["login_school"], result["login_tg"]
+        login_school = result["login_school"]
+        login_tg = result["login_tg"]
+
+        # Обновление или добавление поля с датой в базу данных. Используется для отслеживания последнего обращения к пользователю.
+        db.login.update_one(
+            {"_id": result["_id"]},
+            {"$set": {"last_access_date_int": current_date}},
+            upsert=True
+        )
+        return login_school, login_tg
+
 
 # Обработчик команды /start
 @bot.message_handler(commands=['start'])
@@ -67,22 +95,32 @@ def handle_start(message):
         bot.send_message(message.chat.id, f'Привет, {message.from_user.first_name}, введи свой школьный ник')
         bot.register_next_step_handler(message, hi)
 
-# Функция для обработки ввода школьного ника
+# # Функция для обработки ввода школьного ника
 def hi(message):
-    # Получение логина пользователя в нижнем регистре
-    login_school = message.text.lower()
-    # Получение логина пользователя в Telegram в нижнем регистре
-    login_tg = message.from_user.username.lower() if message.from_user.username is not None else None
-    user_id = message.from_user.id
-    # Проверка, есть ли логин в Telegram
-    if login_tg is None:
-        # Если логина нет, отправляем сообщение с просьбой создать логин
-        bot.send_message(message.chat.id, 'Для использования бота необходимо создать логин (имя пользователя) в настройках Telegram, это не сложно.')
+    # Получение текста сообщения пользователя в нижнем регистре
+    text = message.text.lower().strip()
+
+    # Проверка на кириллицу или начало с символа "/"
+    if re.search('[а-яА-Я]', text) or text.startswith('/'):
+        # Если текст содержит кириллицу или начинается с символа "/", отправляем сообщение о неверно введенных данных
+        bot.send_message(message.chat.id, 'Неверно введены данные, пожалуйста, введи свой школьный ник.')
+        bot.register_next_step_handler(message, hi)  # Ожидаем нового ввода
     else:
-        # Если логин есть, добавляем логины в базу данных
-        db.login.insert_one({"login_school": login_school, "login_tg": login_tg, "user_id": user_id})
-        bot.send_message(message.chat.id, 'Введи школьный или телеграм ник интересующего тебя пира.')
-    bot.register_next_step_handler(message, callback)
+        # Получение логина пользователя в нижнем регистре
+        login_school = text
+        # Получение логина пользователя в Telegram в нижнем регистре
+        login_tg = message.from_user.username.lower().strip() if message.from_user.username is not None else None
+        user_id = message.from_user.id
+        # Проверка, есть ли логин в Telegram
+        if login_tg is None:
+            # Если логина нет, отправляем сообщение с просьбой создать логин
+            bot.send_message(message.chat.id, 'Для использования бота необходимо создать логин (имя пользователя) в настройках Telegram, это не сложно.')
+        else:
+            # Если логин есть, добавляем логины в базу данных
+            db.login.insert_one({"login_school": login_school, "login_tg": login_tg, "user_id": user_id})
+            bot.send_message(message.chat.id, 'Введи школьный или телеграм ник интересующего тебя пира.')
+        
+        bot.register_next_step_handler(message, callback)
 
 # Обработчик команды /help
 @bot.message_handler(commands=['help'])
@@ -126,6 +164,12 @@ def handle_confirmation(call):
 # Обработчик ввода текста (школьного или телеграм ника)
 @bot.message_handler(content_types=['text'])
 def callback(message):
+    # Обновление или добавление поля с датой в базу данных. Используется для отслеживания последнего обращения к пользователю.
+    db.login.update_one(
+        {"user_id": message.from_user.id},
+        {"$set": {"last_access_date_out": current_date}},
+        upsert=True
+    )
     login = message.text.lower()
     # Удаляет символ "@", если он является первым символом текста сообщения        
     if login.startswith('@'):
