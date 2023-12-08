@@ -1,5 +1,4 @@
 import telebot
-from config import Token_MDB, Token_tg 
 from pymongo import MongoClient
 from telebot import types
 from pymongo.errors import ConnectionFailure
