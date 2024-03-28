@@ -4,8 +4,8 @@ After=network.target
 
 [Service]
 User=root
-WorkingDirectory=/root/programs/login_collect
-ExecStart=/usr/bin/python3 /root/programs/login_collect/login_collect_bot.py
+WorkingDirectory=/root/programs/login_collect_bot
+ExecStart=/usr/bin/python3 /root/programs/login_collect_bot/login_collect_bot.py
 Restart=always
 
 [Install]
