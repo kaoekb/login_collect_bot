@@ -204,7 +204,7 @@ def handle_bot(message):
 
         # Проверяем, что команда содержит ровно две части: /bot и логин
         if len(parts) == 2:
-            login = parts[1].lower()
+            login = parts[1].strip().lower()
 
             # Убираем символ '@', если он присутствует в начале
             if login.startswith('@'):
@@ -215,10 +215,12 @@ def handle_bot(message):
             if result is None:
                 bot.send_message(message.chat.id, "Логин не найден")
             else:
-                text = f"Login school: <a href='https://edu.21-school.ru/profile/{result[0].lower()}@student.21-school.ru'>{result[0].capitalize()}</a>, login tg: @{result[1].capitalize()}"
+                text = f"Login school: {result[0].capitalize()}, login tg: @{result[1].capitalize()}"
                 bot.send_message(message.chat.id, text, parse_mode='HTML')
         else:
             bot.send_message(message.chat.id, 'Пожалуйста, используйте команду в формате: /bot <логин>')
+    else:
+        bot.send_message(message.chat.id, 'Эта команда доступна только в группах.')
 
 
 # Обработчик команды /help
