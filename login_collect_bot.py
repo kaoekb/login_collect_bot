@@ -70,14 +70,36 @@ class DataBase:
         self.login.delete_one({"user_id": user_id})
 
     def increment_requests(self):
+        # Проверяем, существует ли запись для текущего месяца
+        if not self.users.find_one({"month": current_month}):
+            self.users.insert_one({
+                "total_users": 0,
+                "new_users_this_month": 0,
+                "total_requests": 0,
+                "requests_this_month": 0,
+                "month": current_month
+            })
+        
         # Увеличение общего количества запросов и запросов за текущий месяц
-        self.users.update_one({"month": current_month}, {
+        result = self.users.update_one({"month": current_month}, {
             "$inc": {"total_requests": 1, "requests_this_month": 1}})
+        print(f"Increment requests result: {result.modified_count}")
 
     def increment_users(self):
+        # Проверяем, существует ли запись для текущего месяца
+        if not self.users.find_one({"month": current_month}):
+            self.users.insert_one({
+                "total_users": 0,
+                "new_users_this_month": 0,
+                "total_requests": 0,
+                "requests_this_month": 0,
+                "month": current_month
+            })
+        
         # Увеличение количества пользователей и новых пользователей за месяц
-        self.users.update_one({"month": current_month}, {
+        result = self.users.update_one({"month": current_month}, {
             "$inc": {"total_users": 1, "new_users_this_month": 1}})
+        print(f"Increment users result: {result.modified_count}")
 
     def reset_monthly_stats(self):
         # Сброс статистики для нового месяца
@@ -145,6 +167,7 @@ def hi(message):
             bot.send_message(message.chat.id, 'Для использования бота необходимо создать логин (имя пользователя) в настройках Telegram, это не сложно.')
         else:
             db.login.insert_one({"login_school": login_school, "login_tg": login_tg, "user_id": user_id})
+            db.increment_users()
             bot.send_message(message.chat.id, 'Введи школьный или телеграм ник интересующего тебя пира.')
         
         bot.register_next_step_handler(message, callback)
@@ -159,6 +182,10 @@ def handle_bot(message):
         # Проверяем, что команда содержит ровно две части: /bot и логин
         if len(parts) == 2:
             login = parts[1].lower()
+
+        if login.startswith('@'):
+            login = login[1 :]
+
 
             # Ищем логин в базе данных
             result = find_login(login)
@@ -245,27 +272,6 @@ def find_login(login):
             upsert=True
         )
         return login_school, login_tg
-
-# Обработчик ввода текста (школьного или телеграм ника)
-@bot.message_handler(content_types=['text'])
-def callback(message):
-    db.login.update_one(
-        {"user_id": message.from_user.id},
-        {"$set": {"last_access_date_out": current_date}},
-        upsert=True
-    )
-    login = message.text.lower()
-    if login.startswith('@'):
-        login = login[1:]
-    
-    result = find_login(login)
-    if result is None:
-        bot.send_message(message.chat.id, "Логин не найден")
-        bot.send_message(message.chat.id, 'Введи школьный или телеграм ник интересующего тебя пира.')
-    else:
-        text = f"Login school: <a href='https://edu.21-school.ru/profile/{result[0].lower()}@student.21-school.ru'>{result[0].capitalize()}</a>, login tg: @{result[1].capitalize()}"
-        bot.send_message(message.chat.id, text, parse_mode='HTML')
-        bot.send_message(message.chat.id, 'Введи школьный или телеграм ник интересующего тебя пира.')
 
 # Запуск бота
 bot.polling()
