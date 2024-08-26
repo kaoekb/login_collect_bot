@@ -1,0 +1,15 @@
+certifi==2024.7.4
+charset-normalizer==3.3.2
+dnspython==2.6.1
+idna==3.7
+numpy==2.1.0
+pandas==2.2.2
+pymongo==4.8.0
+pyTelegramBotAPI==4.22.1
+python-dateutil==2.9.0.post0
+python-dotenv==1.0.1
+pytz==2024.1
+requests==2.32.3
+six==1.16.0
+tzdata==2024.1
+urllib3==2.2.2

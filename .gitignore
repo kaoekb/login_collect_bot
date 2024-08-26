@@ -27,3 +27,5 @@ config.py
 bot_sqlite3.py
 #Тестовая сборка
 bot_login.py
+# Тестовый стенд
+/test_stend
