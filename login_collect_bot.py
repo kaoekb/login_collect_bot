@@ -173,6 +173,29 @@ def hi(message):
         bot.register_next_step_handler(message, callback)
 
 # Обработчик команды /bot login для чатов
+# @bot.message_handler(commands=['bot'])
+# def handle_bot(message):
+#     if message.chat.type in ["group", "supergroup"]:
+#         # Разделяем текст сообщения на части
+#         parts = message.text.split()
+
+#         # Проверяем, что команда содержит ровно две части: /bot и логин
+#         if len(parts) == 2:
+#             login = parts[1].lower()
+
+#         if login.startswith('@'):
+#             login = login[1 :]
+
+
+#             # Ищем логин в базе данных
+#             result = find_login(login)
+#             if result is None:
+#                 bot.send_message(message.chat.id, "Логин не найден")
+#             else:
+#                 text = f"Login school: <a href='https://edu.21-school.ru/profile/{result[0].lower()}@student.21-school.ru'>{result[0].capitalize()}</a>, login tg: @{result[1].capitalize()}"
+#                 bot.send_message(message.chat.id, text, parse_mode='HTML')
+#         else:
+#             bot.send_message(message.chat.id, 'Пожалуйста, используйте команду в формате: /bot <логин>')
 @bot.message_handler(commands=['bot'])
 def handle_bot(message):
     if message.chat.type in ["group", "supergroup"]:
@@ -183,9 +206,9 @@ def handle_bot(message):
         if len(parts) == 2:
             login = parts[1].lower()
 
-        if login.startswith('@'):
-            login = login[1 :]
-
+            # Убираем символ '@', если он присутствует в начале
+            if login.startswith('@'):
+                login = login[1:]
 
             # Ищем логин в базе данных
             result = find_login(login)
