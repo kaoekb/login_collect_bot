@@ -129,6 +129,12 @@ class DataBase:
 
         if stats:
             stats["total_users"] = total_users  # Обновляем количество пользователей
+            
+            # Инициализация недостающих полей
+            if "bot_requests_this_month" not in stats:
+                stats["bot_requests_this_month"] = 0
+            if "group_requests_this_month" not in stats:
+                stats["group_requests_this_month"] = 0
         else:
             # Если запись для текущего месяца отсутствует, создаем ее
             stats = {
@@ -143,6 +149,7 @@ class DataBase:
             self.users.insert_one(stats)
 
         return stats
+
 
     def export_users_to_excel(self, file_path):
         # Экспорт всех пользователей в Excel
