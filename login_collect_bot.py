@@ -12,7 +12,7 @@ import pandas as pd
 
 # Настройка логирования
 log_formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
-logFile = 'bot.log'
+logFile = '/app/bot.log'
 
 # Запись логов в файл с ротацией
 file_handler = RotatingFileHandler(logFile, mode='a', maxBytes=5*1024*1024, backupCount=2, encoding=None, delay=0)
