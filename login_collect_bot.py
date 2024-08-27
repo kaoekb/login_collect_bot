@@ -14,17 +14,14 @@ import pandas as pd
 log_formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
 logFile = '/app/bot.log'
 
-# Запись логов в файл с ротацией
 file_handler = RotatingFileHandler(logFile, mode='a', maxBytes=5*1024*1024, backupCount=2, encoding=None, delay=0)
 file_handler.setFormatter(log_formatter)
 file_handler.setLevel(logging.INFO)
 
-# Вывод логов в консоль
 console_handler = logging.StreamHandler()
 console_handler.setFormatter(log_formatter)
 console_handler.setLevel(logging.INFO)
 
-# Основной логгер
 logger = logging.getLogger('root')
 logger.setLevel(logging.INFO)
 logger.addHandler(file_handler)
@@ -39,6 +36,9 @@ bot = telebot.TeleBot(os.getenv("Token_tg"))
 now = datetime.now()
 current_date = now.strftime("%Y-%m-%d %H:%M")
 current_month = now.strftime("%Y-%m")
+
+# Переменная для хранения состояния активности бота в группах
+group_states = {}
 
 class DataBase:
     def __init__(self):
@@ -227,10 +227,22 @@ def handle_start(message):
                 bot.send_message(message.chat.id, f'Привет, {message.from_user.first_name}, введи свой школьный ник')
                 bot.register_next_step_handler(message, hi)
             logger.info("Команда /start успешно обработана.")
-        else:
-            bot.send_message(message.chat.id, 'Эта команда доступна только в личных сообщениях.')
+        elif message.chat.type in ["group", "supergroup"]:
+            group_states[message.chat.id] = True
+            bot.send_message(message.chat.id, "Бот активирован и теперь будет реагировать на обращения.")
+            logger.info(f"Бот активирован в группе {message.chat.title} ({message.chat.id})")
     except Exception as e:
         logger.error(f"Ошибка при обработке команды /start: {e}")
+
+@bot.message_handler(commands=['stop'])
+def handle_stop(message):
+    try:
+        if message.chat.type in ["group", "supergroup"]:
+            group_states[message.chat.id] = False
+            bot.send_message(message.chat.id, "Бот деактивирован и больше не будет реагировать на обращения, кроме команды /start.")
+            logger.info(f"Бот деактивирован в группе {message.chat.title} ({message.chat.id})")
+    except Exception as e:
+        logger.error(f"Ошибка при обработке команды /stop: {e}")
 
 @bot.message_handler(commands=['delete'])
 def handle_delete(message):
@@ -257,25 +269,28 @@ def handle_delete(message):
 def handle_bot(message):
     try:
         if message.chat.type in ["group", "supergroup"]:
-            db.increment_group_requests()
-            parts = message.text.split()
+            if group_states.get(message.chat.id, False):
+                db.increment_group_requests()
+                parts = message.text.split()
 
-            if len(parts) == 2:
-                login = parts[1].strip().lower()
+                if len(parts) == 2:
+                    login = parts[1].strip().lower()
 
-                if login.startswith('@'):
-                    login = login[1:]
+                    if login.startswith('@'):
+                        login = login[1:]
 
-                result = find_login(login)
-                if result is None:
-                    bot.send_message(message.chat.id, "Логин не найден")
+                    result = find_login(login)
+                    if result is None:
+                        bot.send_message(message.chat.id, "Логин не найден")
+                    else:
+                        text = f"Login school: {result[0].capitalize()}, login tg: @{result[1].capitalize()}"
+                        bot.send_message(message.chat.id, text, parse_mode='HTML')
                 else:
-                    text = f"Login school: {result[0].capitalize()}, login tg: @{result[1].capitalize()}"
-                    bot.send_message(message.chat.id, text, parse_mode='HTML')
+                    logger.info("Команда /bot обработана без ответа.")
+                    # bot.send_message(message.chat.id, 'Пожалуйста, используйте команду в формате: /bot <логин>')
+                logger.info("Команда /bot успешно обработана.")
             else:
-                logger.info("Команда /bot обработана без ответа.")
-                # bot.send_message(message.chat.id, 'Пожалуйста, используйте команду в формате: /bot <логин>')
-            logger.info("Команда /bot успешно обработана.")
+                logger.info(f"Бот не активен в группе {message.chat.title} ({message.chat.id}), команда /bot проигнорирована.")
         else:
             bot.send_message(message.chat.id, 'Эта команда доступна только в группах.')
     except Exception as e:
@@ -314,25 +329,26 @@ def handle_confirmation(call):
 @bot.message_handler(content_types=['text'])
 def callback(message):
     try:
-        db.increment_bot_requests()
-        db.login.update_one(
-            {"user_id": message.from_user.id},
-            {"$set": {"last_access_date_out": current_date}},
-            upsert=True
-        )
-        login = message.text.lower()
-        if login.startswith('@'):
-            login = login[1:]
+        if message.chat.type == "private":
+            db.increment_bot_requests()
+            db.login.update_one(
+                {"user_id": message.from_user.id},
+                {"$set": {"last_access_date_out": current_date}},
+                upsert=True
+            )
+            login = message.text.lower()
+            if login.startswith('@'):
+                login = login[1:]
 
-        result = find_login(login)
-        if result is None:
-            bot.send_message(message.chat.id, "Логин не найден")
-            bot.send_message(message.chat.id, 'Введи школьный или телеграм ник интересующего тебя пира.')
-        else:
-            text = f"Login school: <a href='https://edu.21-school.ru/profile/{result[0].lower()}@student.21-school.ru'>{result[0].capitalize()}</a>, login tg: @{result[1].capitalize()}"
-            bot.send_message(message.chat.id, text, parse_mode='HTML')
-            bot.send_message(message.chat.id, 'Введи школьный или телеграм ник интересующего тебя пира.')
-        logger.info("Сообщение успешно обработано.")
+            result = find_login(login)
+            if result is None:
+                bot.send_message(message.chat.id, "Логин не найден")
+                bot.send_message(message.chat.id, 'Введи школьный или телеграм ник интересующего тебя пира.')
+            else:
+                text = f"Login school: <a href='https://edu.21-school.ru/profile/{result[0].lower()}@student.21-school.ru'>{result[0].capitalize()}</a>, login tg: @{result[1].capitalize()}"
+                bot.send_message(message.chat.id, text, parse_mode='HTML')
+                bot.send_message(message.chat.id, 'Введи школьный или телеграм ник интересующего тебя пира.')
+            logger.info("Сообщение успешно обработано.")
     except Exception as e:
         logger.error(f"Ошибка при обработке сообщения: {e}")
 
