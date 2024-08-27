@@ -33,16 +33,14 @@ class DataBase:
                 "new_users_this_month": 0,
                 "total_requests": 0,
                 "requests_this_month": 0,
+                "bot_requests_this_month": 0,
+                "group_requests_this_month": 0,
                 "month": current_month
             })
 
     def get_user(self, chat_id):
         try:
-            # Обновление статистики при каждом запросе
-            self.increment_requests()
-
             user = self.login.find_one({"chat_id": chat_id})
-
             if user is not None:
                 return user
 
@@ -69,7 +67,15 @@ class DataBase:
         # Удаление пользователя из базы данных по его user_id
         self.login.delete_one({"user_id": user_id})
 
-    def increment_requests(self):
+    def increment_bot_requests(self):
+        # Увеличение счетчика запросов из бота
+        self._increment_requests("bot_requests_this_month")
+
+    def increment_group_requests(self):
+        # Увеличение счетчика запросов из группы
+        self._increment_requests("group_requests_this_month")
+
+    def _increment_requests(self, field_name):
         # Проверяем, существует ли запись для текущего месяца
         if not self.users.find_one({"month": current_month}):
             self.users.insert_one({
@@ -77,6 +83,8 @@ class DataBase:
                 "new_users_this_month": 0,
                 "total_requests": 0,
                 "requests_this_month": 0,
+                "bot_requests_this_month": 0,
+                "group_requests_this_month": 0,
                 "month": current_month
             })
             print("Создана новая запись для текущего месяца")
@@ -84,7 +92,13 @@ class DataBase:
         # Увеличение общего количества запросов и запросов за текущий месяц
         result = self.users.update_one(
             {"month": current_month},
-            {"$inc": {"total_requests": 1, "requests_this_month": 1}}
+            {
+                "$inc": {
+                    "total_requests": 1,
+                    "requests_this_month": 1,
+                    field_name: 1
+                }
+            }
         )
         print(f"Increment requests result: {result.modified_count}")
 
@@ -99,7 +113,12 @@ class DataBase:
     def reset_monthly_stats(self):
         # Сброс статистики для нового месяца
         self.users.update_one({"month": current_month}, {
-            "$set": {"new_users_this_month": 0, "requests_this_month": 0}})
+            "$set": {
+                "new_users_this_month": 0,
+                "requests_this_month": 0,
+                "bot_requests_this_month": 0,
+                "group_requests_this_month": 0
+            }})
 
     def get_stats(self):
         # Получение количества пользователей из коллекции login
@@ -117,6 +136,8 @@ class DataBase:
                 "new_users_this_month": 0,
                 "total_requests": 0,
                 "requests_this_month": 0,
+                "bot_requests_this_month": 0,
+                "group_requests_this_month": 0,
                 "month": current_month
             }
             self.users.insert_one(stats)
@@ -141,7 +162,9 @@ def handle_stat(message):
             stat_message = (f"Общее количество пользователей: {stats['total_users']}\n"
                             f"Новых пользователей в этом месяце: {stats['new_users_this_month']}\n"
                             f"Общее количество запросов: {stats['total_requests']}\n"
-                            f"Запросов в этом месяце: {stats['requests_this_month']}")
+                            f"Запросов в этом месяце: {stats['requests_this_month']}\n"
+                            f"Запросов из бота в этом месяце: {stats['bot_requests_this_month']}\n"
+                            f"Запросов из группы в этом месяце: {stats['group_requests_this_month']}")
             bot.send_message(message.chat.id, stat_message)
         else:
             bot.send_message(message.chat.id, "Статистика недоступна.")
@@ -158,6 +181,7 @@ def handle_user(message):
 # Обработчик команды /start
 @bot.message_handler(commands=['start'])
 def handle_start(message):
+    db.increment_bot_requests()  # Увеличиваем счетчик запросов из бота
     user_id = message.from_user.id
     if db.login.find_one({"user_id": user_id}) is not None:
         bot.register_next_step_handler(message, callback)
@@ -189,6 +213,8 @@ def hi(message):
 @bot.message_handler(commands=['bot'])
 def handle_bot(message):
     if message.chat.type in ["group", "supergroup"]:
+        db.increment_group_requests()  # Увеличиваем счетчик запросов из группы
+
         # Разделяем текст сообщения на части
         parts = message.text.split()
 
@@ -207,15 +233,15 @@ def handle_bot(message):
             else:
                 text = f"Login school: {result[0].capitalize()}, login tg: @{result[1].capitalize()}"
                 bot.send_message(message.chat.id, text, parse_mode='HTML')
-        # else:
-        #     bot.send_message(message.chat.id, 'Пожалуйста, используйте команду в формате: /bot <логин>')
+        else:
+            bot.send_message(message.chat.id, 'Пожалуйста, используйте команду в формате: /bot <логин>')
     else:
         bot.send_message(message.chat.id, 'Эта команда доступна только в группах.')
-
 
 # Обработчик команды /help
 @bot.message_handler(commands=['help'])
 def handle_help(message):
+    db.increment_bot_requests()  # Увеличиваем счетчик запросов из бота
     help_text = ("Привет! Я бот для поиска пользователей по школьному или телеграм нику.\n\n"
                  "Чтобы начать, введи команду /start и следуй инструкциям.\n\n"
                  "Чтобы удалить логин, введи команду /delete. В дальнейшем по команде /start ты сможешь создать новый логин.\n\n"
@@ -225,6 +251,7 @@ def handle_help(message):
 # Обработчик команды /delete
 @bot.message_handler(commands=['delete'])
 def handle_delete(message):
+    db.increment_bot_requests()  # Увеличиваем счетчик запросов из бота
     user_id = message.from_user.id
     if db.login.find_one({"user_id": user_id}) is not None:
         confirm_message = "Ты точно хочешь удалить свой логин?"
@@ -239,8 +266,8 @@ def handle_delete(message):
 # Обработчик нажатия кнопки подтверждения удаления
 @bot.callback_query_handler(func=lambda call: True)
 def handle_confirmation(call):
+    user_id = call.from_user.id
     if call.data == 'confirm_yes':
-        user_id = call.from_user.id
         db.delete_user(user_id)
         bot.send_message(call.message.chat.id, 'Твоя запись удалена из базы данных.')
     elif call.data == 'confirm_no':
@@ -249,6 +276,7 @@ def handle_confirmation(call):
 # Обработчик ввода текста (школьного или телеграм ника)
 @bot.message_handler(content_types=['text'])
 def callback(message):
+    db.increment_bot_requests()  # Увеличиваем счетчик запросов из бота
     db.login.update_one(
         {"user_id": message.from_user.id},
         {"$set": {"last_access_date_out": current_date}},
