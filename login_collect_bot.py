@@ -203,6 +203,16 @@ def handle_stat(message):
     except Exception as e:
         logger.error(f"Ошибка при обработке команды /stat: {e}")
 
+@bot.message_handler(commands=['log'])
+def handle_log(message):
+    try:
+        if str(message.from_user.id) == os.getenv("Your_user_ID"):
+            with open(logFile, "rb") as file:
+                bot.send_document(message.chat.id, file)
+            logger.info("Команда /log успешно обработана.")
+    except Exception as e:
+        logger.error(f"Ошибка при обработке команды /log: {e}")
+        
 @bot.message_handler(commands=['user'])
 def handle_user(message):
     try:
