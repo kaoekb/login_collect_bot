@@ -29,7 +29,7 @@ class DataBase:
         # Инициализация коллекции статистики, если ее еще нет
         if self.users.count_documents({}) == 0:
             self.users.insert_one({
-                "total_users": 0,
+                "total_users": self.login.count_documents({}),  # Инициализируем с реальным числом пользователей
                 "new_users_this_month": 0,
                 "total_requests": 0,
                 "requests_this_month": 0,
@@ -73,32 +73,27 @@ class DataBase:
         # Проверяем, существует ли запись для текущего месяца
         if not self.users.find_one({"month": current_month}):
             self.users.insert_one({
-                "total_users": 0,
+                "total_users": self.login.count_documents({}),  # Инициализируем с реальным числом пользователей
                 "new_users_this_month": 0,
                 "total_requests": 0,
                 "requests_this_month": 0,
                 "month": current_month
             })
-        
+            print("Создана новая запись для текущего месяца")
+
         # Увеличение общего количества запросов и запросов за текущий месяц
-        result = self.users.update_one({"month": current_month}, {
-            "$inc": {"total_requests": 1, "requests_this_month": 1}})
+        result = self.users.update_one(
+            {"month": current_month},
+            {"$inc": {"total_requests": 1, "requests_this_month": 1}}
+        )
         print(f"Increment requests result: {result.modified_count}")
 
     def increment_users(self):
-        # Проверяем, существует ли запись для текущего месяца
-        if not self.users.find_one({"month": current_month}):
-            self.users.insert_one({
-                "total_users": 0,
-                "new_users_this_month": 0,
-                "total_requests": 0,
-                "requests_this_month": 0,
-                "month": current_month
-            })
-        
-        # Увеличение количества пользователей и новых пользователей за месяц
-        result = self.users.update_one({"month": current_month}, {
-            "$inc": {"total_users": 1, "new_users_this_month": 1}})
+        # Увеличение количества новых пользователей за месяц
+        result = self.users.update_one(
+            {"month": current_month},
+            {"$inc": {"new_users_this_month": 1}}
+        )
         print(f"Increment users result: {result.modified_count}")
 
     def reset_monthly_stats(self):
@@ -107,8 +102,26 @@ class DataBase:
             "$set": {"new_users_this_month": 0, "requests_this_month": 0}})
 
     def get_stats(self):
-        # Получение статистики из базы данных
-        return self.users.find_one({"month": current_month})
+        # Получение количества пользователей из коллекции login
+        total_users = self.login.count_documents({})
+
+        # Получение статистики для текущего месяца
+        stats = self.users.find_one({"month": current_month})
+
+        if stats:
+            stats["total_users"] = total_users  # Обновляем количество пользователей
+        else:
+            # Если запись для текущего месяца отсутствует, создаем ее
+            stats = {
+                "total_users": total_users,
+                "new_users_this_month": 0,
+                "total_requests": 0,
+                "requests_this_month": 0,
+                "month": current_month
+            }
+            self.users.insert_one(stats)
+
+        return stats
 
     def export_users_to_excel(self, file_path):
         # Экспорт всех пользователей в Excel
@@ -173,29 +186,6 @@ def hi(message):
         bot.register_next_step_handler(message, callback)
 
 # Обработчик команды /bot login для чатов
-# @bot.message_handler(commands=['bot'])
-# def handle_bot(message):
-#     if message.chat.type in ["group", "supergroup"]:
-#         # Разделяем текст сообщения на части
-#         parts = message.text.split()
-
-#         # Проверяем, что команда содержит ровно две части: /bot и логин
-#         if len(parts) == 2:
-#             login = parts[1].lower()
-
-#         if login.startswith('@'):
-#             login = login[1 :]
-
-
-#             # Ищем логин в базе данных
-#             result = find_login(login)
-#             if result is None:
-#                 bot.send_message(message.chat.id, "Логин не найден")
-#             else:
-#                 text = f"Login school: <a href='https://edu.21-school.ru/profile/{result[0].lower()}@student.21-school.ru'>{result[0].capitalize()}</a>, login tg: @{result[1].capitalize()}"
-#                 bot.send_message(message.chat.id, text, parse_mode='HTML')
-#         else:
-#             bot.send_message(message.chat.id, 'Пожалуйста, используйте команду в формате: /bot <логин>')
 @bot.message_handler(commands=['bot'])
 def handle_bot(message):
     if message.chat.type in ["group", "supergroup"]:
