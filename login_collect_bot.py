@@ -207,8 +207,8 @@ def handle_bot(message):
             else:
                 text = f"Login school: {result[0].capitalize()}, login tg: @{result[1].capitalize()}"
                 bot.send_message(message.chat.id, text, parse_mode='HTML')
-        else:
-            bot.send_message(message.chat.id, 'Пожалуйста, используйте команду в формате: /bot <логин>')
+        # else:
+        #     bot.send_message(message.chat.id, 'Пожалуйста, используйте команду в формате: /bot <логин>')
     else:
         bot.send_message(message.chat.id, 'Эта команда доступна только в группах.')
 
