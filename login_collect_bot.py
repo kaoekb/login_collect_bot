@@ -1,3 +1,5 @@
+import logging
+from logging.handlers import RotatingFileHandler
 import telebot
 from pymongo import MongoClient
 from telebot import types
@@ -6,37 +8,60 @@ from datetime import datetime
 import re
 import os
 from dotenv import load_dotenv, find_dotenv
-import pandas as pd  # Для работы с Excel
+import pandas as pd
+
+# Настройка логирования
+log_formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
+logFile = 'bot.log'
+
+# Запись логов в файл с ротацией
+file_handler = RotatingFileHandler(logFile, mode='a', maxBytes=5*1024*1024, backupCount=2, encoding=None, delay=0)
+file_handler.setFormatter(log_formatter)
+file_handler.setLevel(logging.INFO)
+
+# Вывод логов в консоль
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(log_formatter)
+console_handler.setLevel(logging.INFO)
+
+# Основной логгер
+logger = logging.getLogger('root')
+logger.setLevel(logging.INFO)
+logger.addHandler(file_handler)
+logger.addHandler(console_handler)
+
+logger.info("Бот запускается...")
 
 load_dotenv(find_dotenv())
 
 bot = telebot.TeleBot(os.getenv("Token_tg"))
 
-# Получение текущей даты и времени
 now = datetime.now()
 current_date = now.strftime("%Y-%m-%d %H:%M")
 current_month = now.strftime("%Y-%m")
 
-# Класс для работы с базой данных MongoDB
 class DataBase:
     def __init__(self):
-        cluster = MongoClient(os.getenv("Token_MDB"))
+        try:
+            cluster = MongoClient(os.getenv("Token_MDB"))
+            self.db = cluster["Users_school_21"]
+            self.login = self.db["login"]
+            self.users = self.db["users"]
 
-        self.db = cluster["Users_school_21"]
-        self.login = self.db["login"]
-        self.users = self.db["users"]
-
-        # Инициализация коллекции статистики, если ее еще нет
-        if self.users.count_documents({}) == 0:
-            self.users.insert_one({
-                "total_users": self.login.count_documents({}),  # Инициализируем с реальным числом пользователей
-                "new_users_this_month": 0,
-                "total_requests": 0,
-                "requests_this_month": 0,
-                "bot_requests_this_month": 0,
-                "group_requests_this_month": 0,
-                "month": current_month
-            })
+            if self.users.count_documents({}) == 0:
+                self.users.insert_one({
+                    "total_users": self.login.count_documents({}),
+                    "new_users_this_month": 0,
+                    "total_requests": 0,
+                    "requests_this_month": 0,
+                    "bot_requests_this_month": 0,
+                    "group_requests_this_month": 0,
+                    "month": current_month
+                })
+            logger.info("Подключение к базе данных установлено.")
+        except ConnectionFailure as e:
+            logger.error(f"Ошибка подключения к базе данных: {e}")
+            raise
 
     def get_user(self, chat_id):
         try:
@@ -44,7 +69,6 @@ class DataBase:
             if user is not None:
                 return user
 
-            # Если пользователь не найден, создаем нового пользователя в базе данных
             user = {
                 "chat_id": chat_id,
                 "login_school": [],
@@ -54,89 +78,85 @@ class DataBase:
             self.login.insert_one(user)
             self.increment_users()
             return user
-
-        except ConnectionFailure as e:
-            print(f"Ошибка соединения с базой данных: {e}")
+        except Exception as e:
+            logger.error(f"Ошибка при получении пользователя: {e}")
             return None
 
     def set_user(self, chat_id, update):
-        # Обновление информации о пользователе в базе данных
-        self.login.update_one({"chat_id": chat_id}, {"$set": update})
+        try:
+            self.login.update_one({"chat_id": chat_id}, {"$set": update})
+            logger.info(f"Данные пользователя {chat_id} обновлены.")
+        except Exception as e:
+            logger.error(f"Ошибка при обновлении пользователя: {e}")
 
     def delete_user(self, user_id):
-        # Удаление пользователя из базы данных по его user_id
-        self.login.delete_one({"user_id": user_id})
+        try:
+            self.login.delete_one({"user_id": user_id})
+            logger.info(f"Пользователь {user_id} удален.")
+        except Exception as e:
+            logger.error(f"Ошибка при удалении пользователя: {e}")
 
     def increment_bot_requests(self):
-        # Увеличение счетчика запросов из бота
         self._increment_requests("bot_requests_this_month")
 
     def increment_group_requests(self):
-        # Увеличение счетчика запросов из группы
         self._increment_requests("group_requests_this_month")
 
     def _increment_requests(self, field_name):
-        # Проверяем, существует ли запись для текущего месяца
-        if not self.users.find_one({"month": current_month}):
-            self.users.insert_one({
-                "total_users": self.login.count_documents({}),  # Инициализируем с реальным числом пользователей
-                "new_users_this_month": 0,
-                "total_requests": 0,
-                "requests_this_month": 0,
-                "bot_requests_this_month": 0,
-                "group_requests_this_month": 0,
-                "month": current_month
-            })
-            print("Создана новая запись для текущего месяца")
+        try:
+            if not self.users.find_one({"month": current_month}):
+                self.users.insert_one({
+                    "total_users": self.login.count_documents({}),
+                    "new_users_this_month": 0,
+                    "total_requests": 0,
+                    "requests_this_month": 0,
+                    "bot_requests_this_month": 0,
+                    "group_requests_this_month": 0,
+                    "month": current_month
+                })
+                logger.info("Создана новая запись для текущего месяца.")
 
-        # Увеличение общего количества запросов и запросов за текущий месяц
-        result = self.users.update_one(
-            {"month": current_month},
-            {
-                "$inc": {
-                    "total_requests": 1,
-                    "requests_this_month": 1,
-                    field_name: 1
+            result = self.users.update_one(
+                {"month": current_month},
+                {
+                    "$inc": {
+                        "total_requests": 1,
+                        "requests_this_month": 1,
+                        field_name: 1
+                    }
                 }
-            }
-        )
-        print(f"Increment requests result: {result.modified_count}")
+            )
+            if result.modified_count > 0:
+                logger.info(f"Запросы успешно обновлены для {field_name}.")
+            else:
+                logger.warning(f"Запросы не были обновлены для {field_name}.")
+        except Exception as e:
+            logger.error(f"Ошибка при обновлении запросов: {e}")
 
     def increment_users(self):
-        # Увеличение количества новых пользователей за месяц
-        result = self.users.update_one(
-            {"month": current_month},
-            {"$inc": {"new_users_this_month": 1}}
-        )
-        print(f"Increment users result: {result.modified_count}")
-
-    def reset_monthly_stats(self):
-        # Сброс статистики для нового месяца
-        self.users.update_one({"month": current_month}, {
-            "$set": {
-                "new_users_this_month": 0,
-                "requests_this_month": 0,
-                "bot_requests_this_month": 0,
-                "group_requests_this_month": 0
-            }})
+        try:
+            result = self.users.update_one(
+                {"month": current_month},
+                {"$inc": {"new_users_this_month": 1}}
+            )
+            if result.modified_count > 0:
+                logger.info("Количество новых пользователей обновлено.")
+            else:
+                logger.warning("Не удалось обновить количество новых пользователей.")
+        except Exception as e:
+            logger.error(f"Ошибка при обновлении количества новых пользователей: {e}")
 
     def get_stats(self):
-        # Получение количества пользователей из коллекции login
         total_users = self.login.count_documents({})
-
-        # Получение статистики для текущего месяца
         stats = self.users.find_one({"month": current_month})
 
         if stats:
-            stats["total_users"] = total_users  # Обновляем количество пользователей
-            
-            # Инициализация недостающих полей
+            stats["total_users"] = total_users
             if "bot_requests_this_month" not in stats:
                 stats["bot_requests_this_month"] = 0
             if "group_requests_this_month" not in stats:
                 stats["group_requests_this_month"] = 0
         else:
-            # Если запись для текущего месяца отсутствует, создаем ее
             stats = {
                 "total_users": total_users,
                 "new_users_this_month": 0,
@@ -147,193 +167,195 @@ class DataBase:
                 "month": current_month
             }
             self.users.insert_one(stats)
+            logger.info("Создана новая запись статистики для текущего месяца.")
 
         return stats
 
-
     def export_users_to_excel(self, file_path):
-        # Экспорт всех пользователей в Excel
-        users = self.login.find({})
-        df = pd.DataFrame(list(users))
-        df.to_excel(file_path, index=False)
+        try:
+            users = self.login.find({})
+            df = pd.DataFrame(list(users))
+            df.to_excel(file_path, index=False)
+            logger.info("Данные пользователей экспортированы в Excel.")
+        except Exception as e:
+            logger.error(f"Ошибка при экспорте пользователей в Excel: {e}")
 
 
 db = DataBase()
 
-# Обработчик команды /stat
 @bot.message_handler(commands=['stat'])
 def handle_stat(message):
-    if str(message.from_user.id) == os.getenv("Your_user_ID"):
-        stats = db.get_stats()
-        if stats:
-            stat_message = (f"Общее количество пользователей: {stats['total_users']}\n"
-                            f"Новых пользователей в этом месяце: {stats['new_users_this_month']}\n"
-                            f"Общее количество запросов: {stats['total_requests']}\n"
-                            f"Запросов в этом месяце: {stats['requests_this_month']}\n"
-                            f"Запросов из бота в этом месяце: {stats['bot_requests_this_month']}\n"
-                            f"Запросов из группы в этом месяце: {stats['group_requests_this_month']}")
-            bot.send_message(message.chat.id, stat_message)
-        else:
-            bot.send_message(message.chat.id, "Статистика недоступна.")
+    try:
+        if str(message.from_user.id) == os.getenv("Your_user_ID"):
+            stats = db.get_stats()
+            if stats:
+                stat_message = (f"Общее количество пользователей: {stats['total_users']}\n"
+                                f"Новых пользователей в этом месяце: {stats['new_users_this_month']}\n"
+                                f"Общее количество запросов: {stats['total_requests']}\n"
+                                f"Запросов в этом месяце: {stats['requests_this_month']}\n"
+                                f"Запросов из бота в этом месяце: {stats['bot_requests_this_month']}\n"
+                                f"Запросов из группы в этом месяце: {stats['group_requests_this_month']}")
+                bot.send_message(message.chat.id, stat_message)
+            else:
+                bot.send_message(message.chat.id, "Статистика недоступна.")
+            logger.info("Команда /stat успешно обработана.")
+    except Exception as e:
+        logger.error(f"Ошибка при обработке команды /stat: {e}")
 
-# Обработчик команды /user
 @bot.message_handler(commands=['user'])
 def handle_user(message):
-    if str(message.from_user.id) == os.getenv("Your_user_ID"):
-        file_path = "users_data.xlsx"
-        db.export_users_to_excel(file_path)
-        with open(file_path, "rb") as file:
-            bot.send_document(message.chat.id, file)
+    try:
+        if str(message.from_user.id) == os.getenv("Your_user_ID"):
+            file_path = "users_data.xlsx"
+            db.export_users_to_excel(file_path)
+            with open(file_path, "rb") as file:
+                bot.send_document(message.chat.id, file)
+            logger.info("Команда /user успешно обработана.")
+    except Exception as e:
+        logger.error(f"Ошибка при обработке команды /user: {e}")
 
-# Обработчик команды /start
 @bot.message_handler(commands=['start'])
 def handle_start(message):
-    if message.chat.type == "private":
-        db.increment_bot_requests()  # Увеличиваем счетчик запросов из бота
-        user_id = message.from_user.id
-        if db.login.find_one({"user_id": user_id}) is not None:
-            bot.register_next_step_handler(message, callback)
-            bot.send_message(message.chat.id, 'Введи школьный или телеграм ник интересующего тебя пира.')
+    try:
+        if message.chat.type == "private":
+            db.increment_bot_requests()
+            user_id = message.from_user.id
+            if db.login.find_one({"user_id": user_id}) is not None:
+                bot.register_next_step_handler(message, callback)
+                bot.send_message(message.chat.id, 'Введи школьный или телеграм ник интересующего тебя пира.')
+            else:
+                bot.send_message(message.chat.id, f'Привет, {message.from_user.first_name}, введи свой школьный ник')
+                bot.register_next_step_handler(message, hi)
+            logger.info("Команда /start успешно обработана.")
         else:
-            bot.send_message(message.chat.id, f'Привет, {message.from_user.first_name}, введи свой школьный ник')
-            bot.register_next_step_handler(message, hi)
-    else:
-        # Игнорируем команду, если она выполнена в группе
-        bot.send_message(message.chat.id, 'Эта команда доступна только в личных сообщениях.')
+            bot.send_message(message.chat.id, 'Эта команда доступна только в личных сообщениях.')
+    except Exception as e:
+        logger.error(f"Ошибка при обработке команды /start: {e}")
 
-# Функция для обработки ввода школьного ника
-def hi(message):
-    text = message.text.lower().strip()
-    if re.search('[а-яА-Я]', text) or text.startswith('/'):
-        bot.send_message(message.chat.id, 'Неверно введены данные, пожалуйста, введи свой школьный ник.')
-        bot.register_next_step_handler(message, hi)
-    else:
-        login_school = text
-        login_tg = message.from_user.username.lower().strip() if message.from_user.username is not None else None
-        user_id = message.from_user.id
-        if login_tg is None:
-            bot.send_message(message.chat.id, 'Для использования бота необходимо создать логин (имя пользователя) в настройках Telegram, это не сложно.')
+@bot.message_handler(commands=['delete'])
+def handle_delete(message):
+    try:
+        if message.chat.type == "private":
+            db.increment_bot_requests()
+            user_id = message.from_user.id
+            if db.login.find_one({"user_id": user_id}) is not None:
+                confirm_message = "Ты точно хочешь удалить свой логин?"
+                confirm_keyboard = types.InlineKeyboardMarkup()
+                yes_button = types.InlineKeyboardButton("Да", callback_data='confirm_yes')
+                no_button = types.InlineKeyboardButton("Нет", callback_data='confirm_no')
+                confirm_keyboard.row(yes_button, no_button)
+                bot.send_message(message.chat.id, confirm_message, reply_markup=confirm_keyboard)
+            else:
+                bot.send_message(message.chat.id, 'Ты ещё не зарегистрирован.')
+            logger.info("Команда /delete успешно обработана.")
         else:
-            db.login.insert_one({"login_school": login_school, "login_tg": login_tg, "user_id": user_id})
-            db.increment_users()
-            bot.send_message(message.chat.id, 'Введи школьный или телеграм ник интересующего тебя пира.')
-        
-        bot.register_next_step_handler(message, callback)
+            bot.send_message(message.chat.id, 'Эта команда доступна только в личных сообщениях.')
+    except Exception as e:
+        logger.error(f"Ошибка при обработке команды /delete: {e}")
 
-# Обработчик команды /bot login для чатов
 @bot.message_handler(commands=['bot'])
 def handle_bot(message):
-    if message.chat.type in ["group", "supergroup"]:
-        db.increment_group_requests()  # Увеличиваем счетчик запросов из группы
+    try:
+        if message.chat.type in ["group", "supergroup"]:
+            db.increment_group_requests()
+            parts = message.text.split()
 
-        # Разделяем текст сообщения на части
-        parts = message.text.split()
+            if len(parts) == 2:
+                login = parts[1].strip().lower()
 
-        # Проверяем, что команда содержит ровно две части: /bot и логин
-        if len(parts) == 2:
-            login = parts[1].strip().lower()
+                if login.startswith('@'):
+                    login = login[1:]
 
-            # Убираем символ '@', если он присутствует в начале
-            if login.startswith('@'):
-                login = login[1:]
-
-            # Ищем логин в базе данных
-            result = find_login(login)
-            if result is None:
-                bot.send_message(message.chat.id, "Логин не найден")
+                result = find_login(login)
+                if result is None:
+                    bot.send_message(message.chat.id, "Логин не найден")
+                else:
+                    text = f"Login school: {result[0].capitalize()}, login tg: @{result[1].capitalize()}"
+                    bot.send_message(message.chat.id, text, parse_mode='HTML')
             else:
-                text = f"Login school: {result[0].capitalize()}, login tg: @{result[1].capitalize()}"
-                bot.send_message(message.chat.id, text, parse_mode='HTML')
-        # else:
-        #     bot.send_message(message.chat.id, 'Пожалуйста, используйте команду в формате: /bot <логин>')
-    else:
-        bot.send_message(message.chat.id, 'Эта команда доступна только в группах.')
+                logger.info("Команда /bot обработана без ответа.")
+                # bot.send_message(message.chat.id, 'Пожалуйста, используйте команду в формате: /bot <логин>')
+            logger.info("Команда /bot успешно обработана.")
+        else:
+            bot.send_message(message.chat.id, 'Эта команда доступна только в группах.')
+    except Exception as e:
+        logger.error(f"Ошибка при обработке команды /bot: {e}")
 
-# Обработчик команды /help
 @bot.message_handler(commands=['help'])
 def handle_help(message):
-    db.increment_bot_requests()  # Увеличиваем счетчик запросов из бота
-    help_text = ("Привет! Я бот для поиска пользователей по школьному или телеграм нику.\n\n"
+    try:
+        db.increment_bot_requests()
+        help_text = ("Привет! Я бот для поиска пользователей по школьному или телеграм нику.\n\n"
                  "Если вы в группе, введя команду /bot <логин>, вы получите информацию о пользователе.\n\n"
                  "\n\n"
                  "Если вы в личных сообщениях, введя команду /start, вы можете создать свой логин.\n\n"
                 #  "Чтобы начать, введи команду /start и следуй инструкциям.\n\n"
                  "Чтобы удалить логин, введи команду /delete. В дальнейшем по команде /start ты сможешь создать новый логин.\n\n"
                  "Если у тебя возникли вопросы или проблемы - обратись к администратору @kaoekb.")
-    bot.send_message(message.chat.id, help_text)
 
-# Обработчик команды /delete
-@bot.message_handler(commands=['delete'])
-def handle_delete(message):
-    if message.chat.type == "private":
-        db.increment_bot_requests()  # Увеличиваем счетчик запросов из бота
-        user_id = message.from_user.id
-        if db.login.find_one({"user_id": user_id}) is not None:
-            confirm_message = "Ты точно хочешь удалить свой логин?"
-            confirm_keyboard = types.InlineKeyboardMarkup()
-            yes_button = types.InlineKeyboardButton("Да", callback_data='confirm_yes')
-            no_button = types.InlineKeyboardButton("Нет", callback_data='confirm_no')
-            confirm_keyboard.row(yes_button, no_button)
-            bot.send_message(message.chat.id, confirm_message, reply_markup=confirm_keyboard)
-        else:
-            bot.send_message(message.chat.id, 'Ты ещё не зарегистрирован.')
-    else:
-        # Игнорируем команду, если она выполнена в группе
-        bot.send_message(message.chat.id, 'Эта команда доступна только в личных сообщениях.')
+        bot.send_message(message.chat.id, help_text)
+        logger.info("Команда /help успешно обработана.")
+    except Exception as e:
+        logger.error(f"Ошибка при обработке команды /help: {e}")
 
-
-# Обработчик нажатия кнопки подтверждения удаления
 @bot.callback_query_handler(func=lambda call: True)
 def handle_confirmation(call):
-    user_id = call.from_user.id
-    if call.data == 'confirm_yes':
-        db.delete_user(user_id)
-        bot.send_message(call.message.chat.id, 'Твоя запись удалена из базы данных.')
-    elif call.data == 'confirm_no':
-        bot.send_message(call.message.chat.id, 'Отменено.')
+    try:
+        user_id = call.from_user.id
+        if call.data == 'confirm_yes':
+            db.delete_user(user_id)
+            bot.send_message(call.message.chat.id, 'Твоя запись удалена из базы данных.')
+        elif call.data == 'confirm_no':
+            bot.send_message(call.message.chat.id, 'Отменено.')
+        logger.info("Запрос подтверждения успешно обработан.")
+    except Exception as e:
+        logger.error(f"Ошибка при обработке подтверждения: {e}")
 
-# Обработчик ввода текста (школьного или телеграм ника)
 @bot.message_handler(content_types=['text'])
 def callback(message):
-    db.increment_bot_requests()  # Увеличиваем счетчик запросов из бота
-    db.login.update_one(
-        {"user_id": message.from_user.id},
-        {"$set": {"last_access_date_out": current_date}},
-        upsert=True
-    )
-    login = message.text.lower()
-    if login.startswith('@'):
-        login = login[1:]
-    
-    result = find_login(login)
-    if result is None:
-        bot.send_message(message.chat.id, "Логин не найден")
-        bot.send_message(message.chat.id, 'Введи школьный или телеграм ник интересующего тебя пира.')
-    else:
-        text = f"Login school: <a href='https://edu.21-school.ru/profile/{result[0].lower()}@student.21-school.ru'>{result[0].capitalize()}</a>, login tg: @{result[1].capitalize()}"
-        bot.send_message(message.chat.id, text, parse_mode='HTML')
-        bot.send_message(message.chat.id, 'Введи школьный или телеграм ник интересующего тебя пира.')
-
-def find_login(login):
-    # Параметризованный запрос к базе данных
-    query = {"$or": [
-        {"login_school": {"$eq": login}},
-        {"login_tg": {"$eq": login}}
-    ]}
-    result = db.login.find_one(query)
-    if result is None:
-        return None
-    else:
-        login_school = result["login_school"]
-        login_tg = result["login_tg"]
-
-        # Обновление или добавление поля с датой в базу данных. Используется для отслеживания последнего обращения к пользователю.
+    try:
+        db.increment_bot_requests()
         db.login.update_one(
-            {"_id": result["_id"]},
-            {"$set": {"last_access_date_int": current_date}},
+            {"user_id": message.from_user.id},
+            {"$set": {"last_access_date_out": current_date}},
             upsert=True
         )
-        return login_school, login_tg
+        login = message.text.lower()
+        if login.startswith('@'):
+            login = login[1:]
 
-# Запуск бота
+        result = find_login(login)
+        if result is None:
+            bot.send_message(message.chat.id, "Логин не найден")
+            bot.send_message(message.chat.id, 'Введи школьный или телеграм ник интересующего тебя пира.')
+        else:
+            text = f"Login school: <a href='https://edu.21-school.ru/profile/{result[0].lower()}@student.21-school.ru'>{result[0].capitalize()}</a>, login tg: @{result[1].capitalize()}"
+            bot.send_message(message.chat.id, text, parse_mode='HTML')
+            bot.send_message(message.chat.id, 'Введи школьный или телеграм ник интересующего тебя пира.')
+        logger.info("Сообщение успешно обработано.")
+    except Exception as e:
+        logger.error(f"Ошибка при обработке сообщения: {e}")
+
+def find_login(login):
+    try:
+        query = {"$or": [
+            {"login_school": {"$eq": login}},
+            {"login_tg": {"$eq": login}}
+        ]}
+        result = db.login.find_one(query)
+        if result is None:
+            return None
+        else:
+            login_school = result["login_school"]
+            login_tg = result["login_tg"]
+            db.login.update_one(
+                {"_id": result["_id"]},
+                {"$set": {"last_access_date_int": current_date}},
+                upsert=True
+            )
+            return login_school, login_tg
+    except Exception as e:
+        logger.error(f"Ошибка при поиске логина: {e}")
+        return None
+
 bot.polling()
