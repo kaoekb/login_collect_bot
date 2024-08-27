@@ -9,6 +9,7 @@ import re
 import os
 from dotenv import load_dotenv, find_dotenv
 import pandas as pd
+from telebot.types import BotCommand, BotCommandScopeDefault, BotCommandScopeChat
 
 # Настройка логирования
 log_formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
@@ -214,6 +215,34 @@ def handle_user(message):
     except Exception as e:
         logger.error(f"Ошибка при обработке команды /user: {e}")
 
+# Функция для установки команд в меню
+def set_bot_commands():
+    # Команды, доступные в личных сообщениях
+    private_commands = [
+        BotCommand("start", "Старт"),
+        BotCommand("help", "Помощь"),
+        BotCommand("delete", "Удалить логин"),
+    ]
+
+    # Команды, доступные в группах
+    group_commands = [
+        BotCommand("start", "Старт"),
+        BotCommand("help", "Помощь"),
+        BotCommand("stop", "Остановить бота"),
+        BotCommand("bot", "Найти логин"),
+    ]
+
+    # Установка команд для личных сообщений
+    bot.set_my_commands(private_commands, scope=BotCommandScopeDefault())
+
+    # Установка команд для группы
+    for group_id in group_states.keys():
+        bot.set_my_commands(group_commands, scope=BotCommandScopeChat(group_id))
+
+# Вызов функции установки команд при старте бота
+set_bot_commands()
+
+# Обработка команды /start для установки команд в группах при первом запуске
 @bot.message_handler(commands=['start'])
 def handle_start(message):
     try:
@@ -230,6 +259,7 @@ def handle_start(message):
         elif message.chat.type in ["group", "supergroup"]:
             group_states[message.chat.id] = True
             bot.send_message(message.chat.id, "Бот активирован и теперь будет реагировать на обращения.")
+            set_bot_commands()  # Установка команд для группы при активации бота
             logger.info(f"Бот активирован в группе {message.chat.title} ({message.chat.id})")
     except Exception as e:
         logger.error(f"Ошибка при обработке команды /start: {e}")
