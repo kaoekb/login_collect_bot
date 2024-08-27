@@ -188,14 +188,18 @@ def handle_user(message):
 # Обработчик команды /start
 @bot.message_handler(commands=['start'])
 def handle_start(message):
-    db.increment_bot_requests()  # Увеличиваем счетчик запросов из бота
-    user_id = message.from_user.id
-    if db.login.find_one({"user_id": user_id}) is not None:
-        bot.register_next_step_handler(message, callback)
-        bot.send_message(message.chat.id, 'Введи школьный или телеграм ник интересующего тебя пира.')
+    if message.chat.type == "private":
+        db.increment_bot_requests()  # Увеличиваем счетчик запросов из бота
+        user_id = message.from_user.id
+        if db.login.find_one({"user_id": user_id}) is not None:
+            bot.register_next_step_handler(message, callback)
+            bot.send_message(message.chat.id, 'Введи школьный или телеграм ник интересующего тебя пира.')
+        else:
+            bot.send_message(message.chat.id, f'Привет, {message.from_user.first_name}, введи свой школьный ник')
+            bot.register_next_step_handler(message, hi)
     else:
-        bot.send_message(message.chat.id, f'Привет, {message.from_user.first_name}, введи свой школьный ник')
-        bot.register_next_step_handler(message, hi)
+        # Игнорируем команду, если она выполнена в группе
+        bot.send_message(message.chat.id, 'Эта команда доступна только в личных сообщениях.')
 
 # Функция для обработки ввода школьного ника
 def hi(message):
@@ -240,8 +244,8 @@ def handle_bot(message):
             else:
                 text = f"Login school: {result[0].capitalize()}, login tg: @{result[1].capitalize()}"
                 bot.send_message(message.chat.id, text, parse_mode='HTML')
-        else:
-            bot.send_message(message.chat.id, 'Пожалуйста, используйте команду в формате: /bot <логин>')
+        # else:
+        #     bot.send_message(message.chat.id, 'Пожалуйста, используйте команду в формате: /bot <логин>')
     else:
         bot.send_message(message.chat.id, 'Эта команда доступна только в группах.')
 
@@ -250,7 +254,10 @@ def handle_bot(message):
 def handle_help(message):
     db.increment_bot_requests()  # Увеличиваем счетчик запросов из бота
     help_text = ("Привет! Я бот для поиска пользователей по школьному или телеграм нику.\n\n"
-                 "Чтобы начать, введи команду /start и следуй инструкциям.\n\n"
+                 "Если вы в группе, введя команду /bot <логин>, вы получите информацию о пользователе.\n\n"
+                 "\n\n"
+                 "Если вы в личных сообщениях, введя команду /start, вы можете создать свой логин.\n\n"
+                #  "Чтобы начать, введи команду /start и следуй инструкциям.\n\n"
                  "Чтобы удалить логин, введи команду /delete. В дальнейшем по команде /start ты сможешь создать новый логин.\n\n"
                  "Если у тебя возникли вопросы или проблемы - обратись к администратору @kaoekb.")
     bot.send_message(message.chat.id, help_text)
@@ -258,17 +265,22 @@ def handle_help(message):
 # Обработчик команды /delete
 @bot.message_handler(commands=['delete'])
 def handle_delete(message):
-    db.increment_bot_requests()  # Увеличиваем счетчик запросов из бота
-    user_id = message.from_user.id
-    if db.login.find_one({"user_id": user_id}) is not None:
-        confirm_message = "Ты точно хочешь удалить свой логин?"
-        confirm_keyboard = types.InlineKeyboardMarkup()
-        yes_button = types.InlineKeyboardButton("Да", callback_data='confirm_yes')
-        no_button = types.InlineKeyboardButton("Нет", callback_data='confirm_no')
-        confirm_keyboard.row(yes_button, no_button)
-        bot.send_message(message.chat.id, confirm_message, reply_markup=confirm_keyboard)
+    if message.chat.type == "private":
+        db.increment_bot_requests()  # Увеличиваем счетчик запросов из бота
+        user_id = message.from_user.id
+        if db.login.find_one({"user_id": user_id}) is not None:
+            confirm_message = "Ты точно хочешь удалить свой логин?"
+            confirm_keyboard = types.InlineKeyboardMarkup()
+            yes_button = types.InlineKeyboardButton("Да", callback_data='confirm_yes')
+            no_button = types.InlineKeyboardButton("Нет", callback_data='confirm_no')
+            confirm_keyboard.row(yes_button, no_button)
+            bot.send_message(message.chat.id, confirm_message, reply_markup=confirm_keyboard)
+        else:
+            bot.send_message(message.chat.id, 'Ты ещё не зарегистрирован.')
     else:
-        bot.send_message(message.chat.id, 'Ты ещё не зарегистрирован.')
+        # Игнорируем команду, если она выполнена в группе
+        bot.send_message(message.chat.id, 'Эта команда доступна только в личных сообщениях.')
+
 
 # Обработчик нажатия кнопки подтверждения удаления
 @bot.callback_query_handler(func=lambda call: True)
