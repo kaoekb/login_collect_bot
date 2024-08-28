@@ -10,6 +10,8 @@ import os
 from dotenv import load_dotenv, find_dotenv
 import pandas as pd
 from telebot.types import BotCommand, BotCommandScopeDefault, BotCommandScopeChat
+import time
+from telebot.apihelper import ApiTelegramException
 
 # Настройка логирования
 log_formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
@@ -426,4 +428,18 @@ def find_login(login):
         logger.error(f"Ошибка при поиске логина: {e}")
         return None
 
-bot.polling()
+def polling_with_retries(bot, num_retries=5, delay=5):
+    for _ in range(num_retries):
+        try:
+            bot.polling()
+            break
+        except ApiTelegramException as e:
+            if "502" in str(e):
+                logger.warning("Получена ошибка 502. Повторная попытка через несколько секунд...")
+                time.sleep(delay)
+                continue
+            else:
+                raise e
+
+# Запуск бота с повторными попытками
+polling_with_retries(bot)

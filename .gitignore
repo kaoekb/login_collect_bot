@@ -29,5 +29,7 @@ bot_sqlite3.py
 bot_login.py
 # Тестовый стенд
 /test_stend
-
+/venv
 old_login_collect_bot.py
+updated_users_data.xlsx
+clear_mongo.py
