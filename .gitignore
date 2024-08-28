@@ -32,4 +32,4 @@ bot_login.py
 /venv
 old_login_collect_bot.py
 updated_users_data.xlsx
-clear_mongo.py
+# clear_mongo.py
