@@ -1,32 +1,35 @@
+import logging
 import os
 import requests
-import logging
 from pymongo import MongoClient
 
 # Настройка логирования
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler("mongo_update.log"),
-        logging.StreamHandler()
-    ]
-)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Подключение к MongoDB
 try:
-    cluster = MongoClient(os.getenv("Token_MDB"), serverSelectionTimeoutMS=5000)
+    # Подключение к MongoDB
+    mongo_uri = os.getenv("Token_MDB")
+    if not mongo_uri:
+        raise ValueError("Переменная окружения 'Token_MDB' не найдена или пуста.")
+    
+    cluster = MongoClient(mongo_uri, serverSelectionTimeoutMS=5000)
     db = cluster["Users_school_21_kzn"]
     login_collection = db["login"]
+
+    # Проверка подключения
+    cluster.admin.command('ping')
     logging.info("Подключение к базе данных MongoDB установлено успешно.")
-    print("Подключение к базе данных MongoDB установлено успешно.")
+
 except Exception as e:
-    logging.error(f"Ошибка подключения к MongoDB: {e}")
-    raise
+    logging.error(f"Ошибка подключения к базе данных MongoDB: {e}")
+    exit(1)
 
 # API URL и ключ
 API_URL = "https://edu-api.21-school.ru/services/21-school/api/v1/participants/"
 API_KEY = os.getenv("API_KEY")
+if not API_KEY:
+    logging.error("Переменная окружения 'API_KEY' не найдена или пуста.")
+    exit(1)
 
 # Функция для получения данных пользователя через API
 def get_user_data(email):
@@ -34,22 +37,23 @@ def get_user_data(email):
     try:
         response = requests.get(f"{API_URL}{email}", headers=headers)
         if response.status_code == 200:
-            logging.info(f"Данные для {email} успешно получены.")
             return response.json()
         else:
-            logging.warning(f"Не удалось получить данные для {email}. Статус код: {response.status_code}")
+            logging.warning(f"Не удалось получить данные для {email}, код ответа: {response.status_code}")
             return None
     except Exception as e:
-        logging.error(f"Ошибка при обращении к API для {email}: {e}")
+        logging.error(f"Ошибка при запросе данных пользователя: {e}")
         return None
 
 # Проход по всем пользователям в коллекции
 try:
     for user in login_collection.find():
-        login_school = user['login_school']
+        login_school = user.get('login_school')
+        if not login_school:
+            logging.warning(f"Отсутствует поле 'login_school' для пользователя с id {user['_id']}")
+            continue
+
         email = f"{login_school}@student.21-school.ru"
-        logging.info(f"Обработка пользователя с логином {login_school}.")
-        
         user_info = get_user_data(email)
 
         if user_info:
@@ -67,7 +71,6 @@ try:
             login_collection.update_one({"_id": user["_id"]}, {"$set": update_fields})
             logging.info(f"Пользователь {email} успешно обновлен.")
         else:
-            # Удаление пользователя, если данных по нему нет
             login_collection.delete_one({"_id": user["_id"]})
             logging.info(f"Пользователь {email} удален из базы данных, так как не найден.")
 except Exception as e:
