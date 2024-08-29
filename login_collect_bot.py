@@ -261,9 +261,10 @@ def handle_start(message):
         if message.chat.type == "private":
             db.increment_bot_requests()
             user_id = message.from_user.id
-            if db.login.find_one({"user_id": user_id}) is not None:
-                bot.register_next_step_handler(message, callback)
+            user = db.login.find_one({"user_id": user_id})
+            if user is not None and user.get("login_school"):
                 bot.send_message(message.chat.id, 'Введи школьный или телеграм ник интересующего тебя пира.')
+                bot.register_next_step_handler(message, callback)
             else:
                 bot.send_message(message.chat.id, f'Привет, {message.from_user.first_name}, введи свой школьный ник')
                 bot.register_next_step_handler(message, hi)
@@ -330,7 +331,8 @@ def handle_delete(message):
         if message.chat.type == "private":
             db.increment_bot_requests()
             user_id = message.from_user.id
-            if db.login.find_one({"user_id": user_id}) is not None:
+            user = db.login.find_one({"user_id": user_id})
+            if user:
                 confirm_message = "Ты точно хочешь удалить свой логин?"
                 confirm_keyboard = types.InlineKeyboardMarkup()
                 yes_button = types.InlineKeyboardButton("Да", callback_data='confirm_yes')
@@ -344,6 +346,7 @@ def handle_delete(message):
             bot.send_message(message.chat.id, 'Эта команда доступна только в личных сообщениях.')
     except Exception as e:
         logger.error(f"Ошибка при обработке команды /delete: {e}")
+
 
 @bot.message_handler(commands=['bot'])
 def handle_bot(message):
