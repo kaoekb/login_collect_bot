@@ -437,15 +437,17 @@ def callback(message):
 
             result = find_login(login)
             if result is None:
-                bot.send_message(message.chat.id, "Логин не найден")
-                bot.send_message(message.chat.id, 'Введи школьный или телеграм ник интересующего тебя пира.')
+                bot.send_message(message.chat.id, "Логин не найден. Попробуйте снова или введите другой ник.")
+                bot.register_next_step_handler(message, callback)  # Ожидаем нового ввода
             else:
                 text = f"Login school: <a href='https://edu.21-school.ru/profile/{result[0].lower()}@student.21-school.ru'>{result[0].capitalize()}</a>, login tg: @{result[1].capitalize()}"
                 bot.send_message(message.chat.id, text, parse_mode='HTML')
                 bot.send_message(message.chat.id, 'Введи школьный или телеграм ник интересующего тебя пира.')
+                bot.register_next_step_handler(message, callback)
             logger.info("Сообщение успешно обработано.")
     except Exception as e:
         logger.error(f"Ошибка при обработке сообщения: {e}")
+
 
 def find_login(login):
     try:
