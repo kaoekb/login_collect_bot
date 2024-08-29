@@ -31,5 +31,6 @@ bot_login.py
 /test_stend
 /venv
 old_login_collect_bot.py
-updated_users_data.xlsx
+*.xlsx
 # clear_mongo.py
+*.log

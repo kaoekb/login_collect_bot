@@ -276,6 +276,44 @@ def handle_start(message):
     except Exception as e:
         logger.error(f"Ошибка при обработке команды /start: {e}")
 
+def hi(message):
+    try:
+        logger.info(f"Пользователь {message.from_user.id} начал ввод школьного ника.")
+
+        # Получение текста сообщения пользователя в нижнем регистре
+        text = message.text.lower().strip()
+
+        # Проверка на кириллицу или начало с символа "/"
+        if re.search('[а-яА-Я]', text) or text.startswith('/'):
+            logger.warning(f"Пользователь {message.from_user.id} ввел некорректные данные: {text}")
+            bot.send_message(message.chat.id, 'Неверно введены данные, пожалуйста, введи свой школьный ник.')
+            bot.register_next_step_handler(message, hi)  # Ожидаем нового ввода
+        else:
+            login_school = text
+            login_tg = message.from_user.username.lower().strip() if message.from_user.username is not None else None
+            user_id = message.from_user.id
+
+            if login_tg is None:
+                logger.warning(f"Пользователь {message.from_user.id} не имеет логина Telegram.")
+                bot.send_message(message.chat.id, 'Для использования бота необходимо создать логин (имя пользователя) в настройках Telegram, это не сложно.')
+            else:
+                existing_user = db.login.find_one({"user_id": user_id})
+                if existing_user:
+                    logger.info(f"Пользователь {message.from_user.id} уже существует. Обновляем данные.")
+                    db.login.update_one({"user_id": user_id}, {"$set": {"login_school": login_school, "login_tg": login_tg}})
+                    bot.send_message(message.chat.id, 'Ваши данные обновлены.')
+                else:
+                    logger.info(f"Пользователь {message.from_user.id} добавлен в базу данных.")
+                    db.login.insert_one({"login_school": login_school, "login_tg": login_tg, "user_id": user_id})
+                    bot.send_message(message.chat.id, 'Ваши данные сохранены.')
+
+                bot.send_message(message.chat.id, 'Введи школьный или телеграм ник интересующего тебя пира.')
+                bot.register_next_step_handler(message, callback)
+
+    except Exception as e:
+        logger.error(f"Ошибка в функции hi для пользователя {message.from_user.id}: {e}")
+        bot.send_message(message.chat.id, "Произошла ошибка, попробуйте снова.")
+
 @bot.message_handler(commands=['stop'])
 def handle_stop(message):
     try:
