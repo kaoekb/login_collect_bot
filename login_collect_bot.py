@@ -261,14 +261,14 @@ def handle_start(message):
         if message.chat.type == "private":
             db.increment_bot_requests()
             user_id = message.from_user.id
-            user = db.login.find_one({"user_id": user_id})
-            if user is not None and user.get("login_school"):
-                bot.send_message(message.chat.id, 'Введи школьный или телеграм ник интересующего тебя пира.')
+            if db.login.find_one({"user_id": user_id}) is not None:
                 bot.register_next_step_handler(message, callback)
+                bot.send_message(message.chat.id, 'Введи школьный или телеграм ник интересующего тебя пира.')
             else:
                 bot.send_message(message.chat.id, f'Привет, {message.from_user.first_name}, введи свой школьный ник')
                 bot.register_next_step_handler(message, hi)
             logger.info("Команда /start успешно обработана.")
+            
         elif message.chat.type in ["group", "supergroup"]:
             group_states[message.chat.id] = True
             bot.send_message(message.chat.id, "Бот активирован и теперь будет реагировать на обращения.")
@@ -331,8 +331,7 @@ def handle_delete(message):
         if message.chat.type == "private":
             db.increment_bot_requests()
             user_id = message.from_user.id
-            user = db.login.find_one({"user_id": user_id})
-            if user:
+            if db.login.find_one({"user_id": user_id}) is not None:
                 confirm_message = "Ты точно хочешь удалить свой логин?"
                 confirm_keyboard = types.InlineKeyboardMarkup()
                 yes_button = types.InlineKeyboardButton("Да", callback_data='confirm_yes')
@@ -346,7 +345,6 @@ def handle_delete(message):
             bot.send_message(message.chat.id, 'Эта команда доступна только в личных сообщениях.')
     except Exception as e:
         logger.error(f"Ошибка при обработке команды /delete: {e}")
-
 
 @bot.message_handler(commands=['bot'])
 def handle_bot(message):
@@ -425,11 +423,6 @@ def handle_confirmation(call):
 def callback(message):
     try:
         if message.chat.type == "private":
-            # Проверяем, является ли сообщение командой
-            if message.text.startswith('/'):
-                # Если это команда, не обрабатываем ее как текст, просто выходим из функции
-                return
-
             db.increment_bot_requests()
             db.login.update_one(
                 {"user_id": message.from_user.id},
@@ -442,17 +435,15 @@ def callback(message):
 
             result = find_login(login)
             if result is None:
-                bot.send_message(message.chat.id, "Логин не найден. Попробуйте снова или введите другой ник.")
-                bot.register_next_step_handler(message, callback)  # Ожидаем нового ввода
+                bot.send_message(message.chat.id, "Логин не найден")
+                bot.send_message(message.chat.id, 'Введи школьный или телеграм ник интересующего тебя пира.')
             else:
                 text = f"Login school: <a href='https://edu.21-school.ru/profile/{result[0].lower()}@student.21-school.ru'>{result[0].capitalize()}</a>, login tg: @{result[1].capitalize()}"
                 bot.send_message(message.chat.id, text, parse_mode='HTML')
                 bot.send_message(message.chat.id, 'Введи школьный или телеграм ник интересующего тебя пира.')
-                bot.register_next_step_handler(message, callback)
             logger.info("Сообщение успешно обработано.")
     except Exception as e:
         logger.error(f"Ошибка при обработке сообщения: {e}")
-
 
 def find_login(login):
     try:
