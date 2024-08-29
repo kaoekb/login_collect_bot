@@ -425,6 +425,11 @@ def handle_confirmation(call):
 def callback(message):
     try:
         if message.chat.type == "private":
+            # Проверяем, является ли сообщение командой
+            if message.text.startswith('/'):
+                # Если это команда, не обрабатываем ее как текст, просто выходим из функции
+                return
+
             db.increment_bot_requests()
             db.login.update_one(
                 {"user_id": message.from_user.id},
