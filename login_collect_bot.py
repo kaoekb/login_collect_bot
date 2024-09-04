@@ -468,17 +468,32 @@ def find_login(login):
         return None
 
 def polling_with_retries(bot, num_retries=5, delay=5):
-    for _ in range(num_retries):
+    while True:
         try:
-            bot.polling()
-            break
+            bot.polling(none_stop=True)  # Запуск бота
         except ApiTelegramException as e:
             if "502" in str(e):
-                logger.warning("Получена ошибка 502. Повторная попытка через несколько секунд...")
+                logger.warning("Ошибка 502: Bad Gateway. Повторная попытка через несколько секунд...")
                 time.sleep(delay)
-                continue
+                continue  # Повторная попытка
             else:
-                raise e
+                logger.error(f"Ошибка API Telegram: {e}")
+                break  # Прерываем работу при другой ошибке
+        except Exception as e:
+            logger.error(f"Неизвестная ошибка: {e}")
+            time.sleep(delay)  # Ожидание перед повторной попыткой
+            continue
+
+def start_bot():
+    while True:
+        try:
+            logger.info("Запуск бота...")
+            polling_with_retries(bot)
+        except Exception as e:
+            logger.error(f"Ошибка критическая: {e}. Перезапуск через 10 секунд.")
+            time.sleep(10)  # Ожидание перед перезапуском
 
 # Запуск бота с повторными попытками
-polling_with_retries(bot)
+# polling_with_retries(bot)
+if __name__ == '__main__':
+    start_bot()  # Старт бота с перезапусками
